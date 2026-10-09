@@ -34,7 +34,7 @@
  *   { "ok": true,  "op": "click", "elapsedMs": 12, "result": { ... } }
  *   { "ok": false, "op": "click", "elapsedMs": 3,  "error": { "code": "ELEMENT_NOT_FOUND", "message": "..." } }
  */
-import { execFileSync, execFile } from 'node:child_process';
+import { execFileSync, execFile, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,16 +81,28 @@ function runPs(args, timeoutMs = 30000) {
     err.code = E.INTERNAL;
     throw err;
   }
-  try {
-    const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', PS1, ...args],
-      { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
-    return out;
-  } catch (e) {
-    const err = new Error((e.stderr || e.message || '').toString().trim().slice(0, 500) || 'PowerShell 调用失败');
-    err.code = e.killed ? E.TIMEOUT : E.PS_FAILED;
-    err.stdout = (e.stdout || '').toString();
+  // ★ 用 spawnSync 而不是 execFileSync。
+  //   原因（我实测踩到的）：底层脚本失败时是「打印一行 JSON 再 exit 1」。
+  //   execFileSync 遇到非 0 退出会抛异常，而异常上的 stdout 未必可靠 ——
+  //   于是那段【精心写的结构化错误】被丢掉，调用方只看到一句 "Command failed: powershell ..."，
+  //   完全无法诊断（我因此误判成"工具没给可诊断信息"）。
+  //   spawnSync 不抛异常，status/stdout/stderr 都明明白白，正是"失败也带结构化信息"需要的。
+  const r = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', PS1, ...args],
+    { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
+  const out = (r.stdout || '').toString();
+  if (r.error) {
+    const err = new Error('无法启动 PowerShell: ' + r.error.message);
+    err.code = E.INTERNAL;
     throw err;
   }
+  if (r.status === 0) return out;
+  // 非 0 退出：把底层那行 JSON 里的 message 提出来当异常信息（这才有诊断价值）
+  const j = lastJson(out);
+  const err = new Error((j && j.message) ? j.message : ((r.stderr || '').toString().trim().slice(0, 500) || 'PowerShell 调用失败'));
+  err.code = (j && j.code) ? j.code : (r.signal ? E.TIMEOUT : E.PS_FAILED);
+  err.stdout = out;
+  err.exitCode = r.status;
+  throw err;
 }
 
 /** 底层脚本按约定：最后一行是一行 JSON（前面是给人看的日志） */
