@@ -252,11 +252,11 @@ try {
     sk('setText 测试', '没找到 DSH 窗口');
   } else {
     await sleep(800);
-    const rr = await act.call({ op: 'setText', name: '搜索会话名称', value: 'actuator-selftest' });
+    const rr = await act.call({ op: 'setText', name: '搜索会话名称', value: 'actuator-selftest', window: 'Harness' });
     t('setText 返回 ok', rr.ok === true, JSON.stringify(rr.error || {}));
     if (rr.ok) {
       t('经由 ValuePattern（未用键盘，不受输入法影响）', rr.result.via === 'ValuePattern', String(rr.result.via));
-      const rc = await act.call({ op: 'setText', name: '搜索会话名称', value: '' });
+      const rc = await act.call({ op: 'setText', name: '搜索会话名称', value: '', window: 'Harness' });
       t('已清空搜索框（界面恢复原状）', rc.ok === true, JSON.stringify(rc.error || {}));
     }
   }
