@@ -329,7 +329,18 @@ switch ($Command) {
         if (-not $w) { return $null }
         return @($w)
       }
+      # ★ 不给窗口关键词时返回【所有顶层窗口】。
+      #   这个行为对"按控件名操作"是【危险的默认值】：我实测时
+      #   `find -NameKeyword '文件'`（不带窗口）把 DSH 界面与任务计划程序窗口里的元素
+      #   全都匹配了出来 —— 20 个命中全是【别的窗口】的，完全没法用来"在某个程序里找控件"。
+      #   所以 find / click / clicontrol / settext 这类命令改为必须限定窗口（见下面 $needsWindow 检查）。
       return @(Get-TopWindows)
+    }
+
+    # 按控件名操作时必须限定窗口，否则会跨程序误匹配
+    $needsWindow = @('find', 'clicontrol', 'settext', 'click')
+    if (($needsWindow -contains $Command) -and (-not $WindowKeyword)) {
+      Fail 'E_BAD_REQUEST' ($Command + ' 需要 -WindowKeyword：限定在哪个窗口里找控件。不给窗口会搜遍所有顶层窗口，导致跨程序误匹配（我实测过这个问题）。')
     }
 
     if ($Command -eq 'dump') {
