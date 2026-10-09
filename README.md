@@ -119,12 +119,16 @@ echo '{"op":"where"}' | node desktop-actuator.mjs serve
 | `capture` | `path`, `region?` | 截屏到 PNG；返回路径与字节数 |
 | `move` | `x`, `y` | 移动鼠标 |
 | `click` | `x`, `y`, `button?` | 按坐标点击（`left` / `right` / `double`） |
-| `clicontrol` | `name`, `window?` | **按控件名触发**（优先 InvokePattern，不用坐标） |
+| `clicontrol` | `name`, **`window`** | **按控件名触发**（优先 InvokePattern，不用坐标） |
 | `key` | `name` | 按键。单键 `ENTER`；**组合键 `CTRL+S`** |
 | `type` | `text` | 输入文本（走剪贴板，支持中文） |
 | `dump` | `window`, `limit?` | 列出窗口内可访问控件（**结构化数组**） |
-| `find` | `name`, `window?` | 按名字找控件，返回中心坐标与可用动作 |
-| `setText` | `name`, `value`, `window?` | 把文字写入输入框（ValuePattern）。**`value` 允许为空串（清空）** |
+| `find` | `name`, **`window`** | 按名字找控件，返回中心坐标与可用动作 |
+| `setText` | `name`, `value`, **`window`** | 把文字写入输入框（ValuePattern）。**`value` 允许为空串（清空）** |
+
+> **注意**：`find` / `clicontrol` / `setText` 的 **`window` 是必填**。
+> 不给窗口关键词时，底层会搜遍**所有顶层窗口** —— 我实测时 `find name="文件"` 不带窗口，
+> 20 个命中**全是别的窗口**里的元素，完全没法用。所以这三类命令强制限定窗口。
 
 ## 错误码
 
