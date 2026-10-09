@@ -228,9 +228,9 @@ const handlers = {
   },
 
   find: async (req) => {
-    needText(req, ['name']);
-    const args = ['find', '-NameKeyword', String(req.name)];
-    if (req.window) args.push('-WindowKeyword', String(req.window));
+    // ★ window 必填：底层不给窗口时会搜遍所有顶层窗口，导致跨程序误匹配（我实测过）。
+    needText(req, ['name', 'window']);
+    const args = ['find', '-NameKeyword', String(req.name), '-WindowKeyword', String(req.window)];
     const out = runPs(args, 45000);
     const hits = [];
     const re = /★ \[([^\]]+)\] '([^']*)'\s*\n\s*中心坐标\(物理\): (\d+),(\d+)\s+可用动作: ([^\n]*)/g;
@@ -246,9 +246,9 @@ const handlers = {
   },
 
   controlClick: async (req) => {
-    needText(req, ['name']);
-    const args = ['clicontrol', '-NameKeyword', String(req.name)];
-    if (req.window) args.push('-WindowKeyword', String(req.window));
+    // ★ window 必填，理由同上：不限定窗口会点错别的程序里的同名控件。
+    needText(req, ['name', 'window']);
+    const args = ['clicontrol', '-NameKeyword', String(req.name), '-WindowKeyword', String(req.window)];
     const out = runPsRaw(args, 45000);
     const j = lastJson(out.stdout);
     // ★ 关键：底层在"找不到控件"时会返回 ok:false 且退出码非 0。
@@ -268,10 +268,10 @@ const handlers = {
 
   setText: async (req) => {
     // name 必须非空（空关键词会匹配到一切）；value 允许为空串 —— 那是"清空输入框"
-    needText(req, ['name']);
-    need(req, ['value']);
-    const args = ['settext', '-NameKeyword', String(req.name), '-FillValue', String(req.value)];
-    if (req.window) args.push('-WindowKeyword', String(req.window));
+    // name 与 window 都必须非空（空关键词会匹配到一切；不给窗口会跨程序误匹配）
+    needText(req, ['name', 'window']);
+    need(req, ['value']);   // value 允许为空串（清空输入框）
+    const args = ['settext', '-NameKeyword', String(req.name), '-FillValue', String(req.value), '-WindowKeyword', String(req.window)];
     const out = runPsRaw(args, 45000);
     const j = lastJson(out.stdout);
     if (out.exitCode !== 0 || (j && j.ok === false)) {
