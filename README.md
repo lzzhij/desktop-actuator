@@ -46,6 +46,29 @@ $ node test-input-safe.mjs
 
 ---
 
+## 一个真实案例（不是玩具演示）
+
+**[案例：自动化「任务计划程序」并导出运维报表](CASE-STUDY-任务计划程序.md)**
+
+那个案例回答两个客户真正会问的问题：**你自动化过哪一个 Windows 桌面程序？
+UI 变化时怎么保证可靠性？** 摘要：
+
+- **先探测，再动手**：两套独立实现遍历 UIA 树，证明 MMC 只暴露 Pane、**零个可交互控件**
+  ⇒ **不能靠 UI 自动化**（对照组：Electron/Web 应用暴露 1017 个元素）
+- **可靠性靠分层，不是靠"点得更准"**：能用官方 API/COM 就绝不点界面。
+  该程序暴露 `Schedule.Service` COM ⇒ 整个流程**一个坐标都不用点**
+- **实测输出**：采集 155 个计划任务 → 5 项事后验证全过 → 导出带 BOM 的 CSV（Excel 不乱码）
+  → 再用一套独立解析器复验产物
+
+复现：
+```bash
+node demo-task-scheduler.mjs --probe          # 只探测，不改动任何东西
+node demo-task-scheduler.mjs --out tasks.csv  # 完整流程
+node verify-csv.mjs tasks.csv                 # 独立复验产物
+node crosscheck-uia.mjs "某个窗口标题"          # 判断目标程序能不能靠 UIA 自动化
+```
+
+---
 ## 为什么做这个东西（以及它不做什么）
 
 调研过这个市场的付费情况后，结论是三条：
