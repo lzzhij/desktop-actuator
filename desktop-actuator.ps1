@@ -163,8 +163,20 @@ switch ($Command) {
     if ($CursorX -eq [int]::MinValue -or $CursorY -eq [int]::MinValue) {
       Fail 'E_BAD_REQUEST' 'move 需要 -CursorX 与 -CursorY'
     }
+    # ★ 不只是"调用没报错"，而是要【验证光标真的动了】。
+    #   我在实测里遇到：SetCursorPos 在某些会话下会失败（GetLastError=203），
+    #   而只信返回值就会报 ok:true —— 又一个"静默做错事"。
+    #   所以这里改成：调用 → 读回实际位置（用与 where 相同的读法）→ 比对。
     $r = [DaInput]::SetCursorPos($CursorX, $CursorY)
-    Out-Json @{ ok = [bool]$r; x = $CursorX; y = $CursorY }
+    Start-Sleep -Milliseconds 80
+    # 用 [System.Windows.Forms.Cursor]::Position 读回 —— 与 where 分支保持同一种读法，
+    # 避免"写入用一套 API、读出用另一套"导致坐标口径不一致。
+    $after = [System.Windows.Forms.Cursor]::Position
+    if ($after.X -ne $CursorX -or $after.Y -ne $CursorY) {
+      $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      Fail 'E_INTERNAL' ("光标未能移动到 " + $CursorX + "," + $CursorY + "；实际停在 " + $after.X + "," + $after.Y + "；SetCursorPos 返回 " + $r + "；Win32 错误码 " + $err + "（常见原因：无交互式桌面会话、远程会话、或系统策略限制光标控制）")
+    }
+    Out-Json @{ ok = $true; x = $after.X; y = $after.Y; verified = $true }
   }
 
   'click' {
