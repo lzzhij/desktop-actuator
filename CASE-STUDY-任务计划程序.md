@@ -168,6 +168,7 @@ node verify-csv.mjs tasks.csv
 | 3 | `move` 报 `ok:true`，但光标**根本没动** | 只信 `SetCursorPos` 的返回值；实测它在当前会话返回 `False` 而我照样报成功 | **调用后读回实际位置比对**；不一致就报 `E_INTERNAL` 并附实际位置与 Win32 错误码 |
 | 4 | 底层写了详细错误信息，调用方却只看到 `Command failed: powershell ...` | `execFileSync` 在非 0 退出时抛异常，**把 stdout 里那行结构化 JSON 丢了** | 改用 **`spawnSync`**，把底层 JSON 里的 `message` / `code` 提取出来 |
 | 5 | 脚本改完突然语法错、中文全乱码 | 编辑工具会**去掉 UTF-8 BOM**，而 PowerShell 5.1 对无 BOM 文件按 GBK 解码 | 加**编码守卫**（`check-encoding.mjs`），并把它放进自测矩阵的第一节 |
+| 6 | `find name="文件"` 返回 20 个命中，**全是别的程序窗口里的元素** | `Get-Roots` 在没给窗口关键词时返回**所有顶层窗口** ⇒ 按控件名查找会跨程序误匹配 | **`find` / `clicontrol` / `setText` 的 `window` 改为必填**；底层 + Node 侧 + 测试 + README 全部同步 |
 
 **第 3、4 条是同一个毛病：底层失败了，上层却报成功。**
 这类"**静默做错事**"比直接报错危险得多 —— 所以我把"失败要带结构化信息"
