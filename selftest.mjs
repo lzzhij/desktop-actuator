@@ -243,7 +243,7 @@ console.log('E. UI Automation —— 只读探测（对 DSH 窗口，不写入�
       t('能找到带 Value 动作的控件（可无键盘写入）', withValue.length > 0, '找到 ' + withValue.length + ' 个');
     }
 
-    const f = call({ op: 'find', name: '文件' });
+    const f = call({ op: 'find', name: '文件', window: kw });   // window 必填（见底层说明）
     t('find 返回合法响应（ok 或 E_ELEMENT_NOT_FOUND）', f.ok === true || (f.error && f.error.code === 'E_ELEMENT_NOT_FOUND'),
       JSON.stringify(f.error || {}));
     if (f.ok) {
@@ -270,7 +270,7 @@ console.log('F. 反例 —— 错误码必须真的会被触发（否则错误�
   const r4 = call({ op: 'type' });
   t('type 缺 text → E_BAD_REQUEST', r4.ok === false && r4.error.code === 'E_BAD_REQUEST');
 
-  const r5 = call({ op: 'find', name: 'zzz-绝不存在的控件名-' + Date.now() });
+  const r5 = call({ op: 'find', name: 'zzz-绝不存在的控件名-' + Date.now(), window: 'Harness' });
   t('find 找不到 → E_ELEMENT_NOT_FOUND', r5.ok === false && r5.error.code === 'E_ELEMENT_NOT_FOUND', JSON.stringify(r5.error || {}));
 
   const r6 = call({ op: 'controlClick', name: 'zzz-绝不存在的控件名-' + Date.now(), window: 'Harness' });
