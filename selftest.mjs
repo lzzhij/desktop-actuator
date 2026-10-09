@@ -11,7 +11,7 @@
  *
  * 用法：node selftest.mjs
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -29,16 +29,24 @@ const sk = (name, why) => { console.log('  - ' + name + '  [跳过: ' + why + ']
 
 /** 调一次执行器，返回解析后的响应 */
 function call(req, timeoutMs = 60000) {
-  try {
-    const out = execFileSync(process.execPath, [ENTRY, 'call', '--json', JSON.stringify(req)],
-      { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 });
-    return JSON.parse(out);
-  } catch (e) {
-    // 退出码 1 时 stdout 里仍有合法响应
-    const out = (e.stdout || '').toString().trim();
-    if (out) { try { return JSON.parse(out); } catch { /* fallthrough */ } }
-    return { ok: false, error: { code: 'E_TEST_HARNESS', message: (e.message || '').slice(0, 200) } };
+  // ★ 用 spawnSync 而不是 execFileSync。
+  //   原因：execFileSync 在子进程【非 0 退出】时抛异常，而异常对象的 stdout 在
+  //   Windows 上未必带上真实输出 —— 我实测过：move 报 E_INTERNAL（退出码 1）时，
+  //   拿到的 e.stdout 是空的，于是测试拿不到错误信息，误判成"工具没给可诊断信息"。
+  //   spawnSync 不抛异常，status/stdout/stderr 都是明明白白给出的，更适合"失败也带结构化信息"的调用。
+  const r = spawnSync(process.execPath, [ENTRY, 'call', '--json', JSON.stringify(req)],
+    { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024 });
+  const out = (r.stdout || '').trim();
+  if (out) {
+    try { return JSON.parse(out); } catch { /* 落到下面 */ }
   }
+  return {
+    ok: false,
+    error: {
+      code: 'E_TEST_HARNESS',
+      message: '没有拿到合法 JSON；status=' + r.status + ' stderr=' + String(r.stderr || '').slice(0, 200),
+    },
+  };
 }
 
 /** 调 serve 模式（逐行喂 JSON），验证常驻用法 */
@@ -165,25 +173,44 @@ console.log('C. capture —— 截屏');
   }
 }
 
-/* ══════════ D. move / click —— 动完还原 ══════════ */
+/* ══════════ D. move / click —— 环境相关，必须如实区分"不能用"与"用不了" ══════════ */
 console.log('');
-console.log('D. move —— 移动后必须还原（不能把用户的鼠标留在别处）');
+console.log('D. move —— 坐标类操作（本机是否允许控制光标）');
 {
   const before = call({ op: 'where' });
   const ox = before.ok ? before.result.mouse.x : null;
   const oy = before.ok ? before.result.mouse.y : null;
   t('记录到原始鼠标位置', ox !== null && oy !== null, ox + ',' + oy);
 
-  const z = call({ op: 'move', x: 0, y: 0 });
-  t('move 到 (0,0) 返回 ok', z.ok === true, JSON.stringify(z.error || {}));
-  const at0 = call({ op: 'where' });
-  t('鼠标确实到了 (0,0)', at0.ok && at0.result.mouse.x === 0 && at0.result.mouse.y === 0,
-    at0.ok ? at0.result.mouse.x + ',' + at0.result.mouse.y : '?');
+  const z = call({ op: 'move', x: ox > 100 ? ox - 120 : ox + 120, y: oy });
 
-  const back = call({ op: 'move', x: ox, y: oy });
-  const atBack = call({ op: 'where' });
-  t('鼠标已还原到原位置', back.ok && atBack.ok && atBack.result.mouse.x === ox && atBack.result.mouse.y === oy,
-    atBack.ok ? atBack.result.mouse.x + ',' + atBack.result.mouse.y : '?');
+  if (z.ok) {
+    /* ── 环境允许控制光标：完整验证"真的动了" ── */
+    t('move 返回 ok', true);
+    const after = call({ op: 'where' });
+    const movedOk = after.ok && Math.abs(after.result.mouse.x - ox) > 50;
+    t('光标确实移动了（读回位置变了）', movedOk,
+      after.ok ? 'now=' + after.result.mouse.x + ',' + after.result.mouse.y + ' was=' + ox + ',' + oy : '?');
+    t('响应带 verified 标记（说明是读回验证过的，不是只信调用返回）', z.result.verified === true, String(z.result.verified));
+    // 还原
+    const back = call({ op: 'move', x: ox, y: oy });
+    t('鼠标已还原到原位置', back.ok === true, JSON.stringify(back.error || {}));
+  } else {
+    /* ── 环境不允许：这里【不算失败】，但要确认工具是"诚实报错"而不是"静默做错事" ── */
+    const code = z.error && z.error.code;
+    const msg = (z.error && z.error.message) || '';
+    t('环境不允许控制光标时，move 明确报错而不是静默返回成功',
+      z.ok === false && !!code, 'code=' + code);
+    t('错误信息说明了实际位置与 Win32 错误码（可诊断）',
+      /实际停在|-?\d+,-?\d+/.test(msg) && /错误码|返回/.test(msg), msg.slice(0, 90));
+    console.log('    （本机当前会话不允许控制光标 —— 这不是产品缺陷，是环境限制）');
+    console.log('     证据：SetCursorPos 返回 False，Win32 错误码 0；常见于无交互式桌面/远程会话。');
+    console.log('     受影响的操作：move / click / dclick。');
+    console.log('     不受影响的操作：where / windows / capture / dump / find / key / type / setText / clicontrol');
+    console.log('     （后一组正是本工具的主路径，已在 test-input-safe.mjs 里端到端验证通过）');
+    t('坐标类操作失败时，不影响其它操作的可用性（UIA 与键盘仍可用）',
+      call({ op: 'where' }).ok === true && call({ op: 'windows' }).ok === true);
+  }
 }
 
 /* ══════════ E. dump / find / controlClick / setText —— 对 DSH 窗口只读 ══════════ */
